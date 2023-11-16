@@ -19,4 +19,4 @@ def d2(func):
 def fd(x):
     print(f"f says {x}")
 
-fd("Bora")
+fd("BURAK")
