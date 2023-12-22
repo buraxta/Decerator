@@ -5,16 +5,19 @@ import math
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-class Fork:
-    def __init__(self, index):
-        self.index = index
-        self.lock = threading.Lock()
-        self.picked_up = False
 
-    def pick_up(self, owner):
+class Fork:
+    def __init__(self, index: int):
+        self.index: int = index
+        self.lock: threading.Lock = threading.Lock()
+        self.picked_up: bool = False
+        self.owner: int = -1
+
+    def pick_up(self, owner: int):
         attempts = 0
         while attempts < 2:  # Try twice to avoid deadlock
-            if self.lock.acquire(blocking=False):
+            if self.lock.acquire():
+                self.owner = owner
                 self.picked_up = True
                 return True
             else:
@@ -25,18 +28,25 @@ class Fork:
     def put_down(self):
         self.lock.release()
         self.picked_up = False
+        self.owner = -1
 
     def __str__(self):
-        return f"F{self.index:2d} ({'P' if self.picked_up else ' '})"
+        return f"F{self.index:2d} ({self.owner:2d})"
+
 
 class Philosopher(threading.Thread):
-    def __init__(self, index, left_fork, right_fork, spaghetti):
+    def __init__(self, index: int, left_fork: Fork, right_fork: Fork, spaghetti: int):
         super().__init__()
-        self.index = index
-        self.left_fork = left_fork
-        self.right_fork = right_fork
-        self.spaghetti = spaghetti
-        self.eating = False
+        self.index: int = index
+        self.left_fork: Fork = left_fork
+        self.right_fork: Fork = right_fork
+        self.spaghetti: int = spaghetti
+        self.eating: bool = False
+
+    def run(self):
+        while self.spaghetti > 0:
+            self.think()
+            self.eat()
 
     def think(self):
         time.sleep(3 + random.random() * 3)
@@ -51,10 +61,9 @@ class Philosopher(threading.Thread):
                 self.right_fork.put_down()
             self.left_fork.put_down()
 
-    def run(self):
-        while self.spaghetti > 0:
-            self.think()
-            self.eat()
+    def __str__(self):
+        return f"P{self.index:2d} ({self.spaghetti:2d})"
+
 
 def animated_table(philosophers: list[Philosopher], forks: list[Fork], m: int):
     """
@@ -145,9 +154,11 @@ def animated_table(philosophers: list[Philosopher], forks: list[Fork], m: int):
             fork_texts[i].set_position(
                 (
                     0.5 * math.cos(2 * math.pi * i / len(philosophers))
-                    + 0.5 * math.cos(2 * math.pi * (i + 1) / len(philosophers)),
+                    + 0.5 * math.cos(2 * math.pi * (i + 1) /
+                                     len(philosophers)),
                     0.5 * math.sin(2 * math.pi * i / len(philosophers))
-                    + 0.5 * math.sin(2 * math.pi * (i + 1) / len(philosophers)),
+                    + 0.5 * math.sin(2 * math.pi * (i + 1) /
+                                     len(philosophers)),
                 )
             )
             fork_texts[i].set_text(str(forks[i]))
@@ -194,6 +205,7 @@ def table(philosophers: list[Philosopher], forks: list[Fork], m: int):
         )
         time.sleep(0.1)
 
+
 def main() -> None:
     n: int = 5
     m: int = 7
@@ -203,10 +215,12 @@ def main() -> None:
     ]
     for philosopher in philosophers:
         philosopher.start()
-    threading.Thread(target=table, args=(philosophers, forks, m), daemon=True).start()
+    threading.Thread(target=table, args=(
+        philosophers, forks, m), daemon=True).start()
     animated_table(philosophers, forks, m)
     for philosopher in philosophers:
         philosopher.join()
+
 
 if __name__ == "__main__":
     main()
