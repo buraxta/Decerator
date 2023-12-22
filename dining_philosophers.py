@@ -1,15 +1,32 @@
 import threading
 import random
 import time
+import math
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-import math
 
-
-class Fork(threading.Semaphore):  # Değişiklik burada
+class Fork:
     def __init__(self, index):
-        super().__init__(1)  # Semaphore, başlangıçta serbest bırakılmış (1) olarak oluşturulur
         self.index = index
+        self.lock = threading.Lock()
+        self.picked_up = False  
+
+    def __enter__(self):
+        return self
+
+    def __call__(self, owner):
+        if self.lock.acquire(blocking=False):
+            self.picked_up = True
+            return self
+        else:
+            return None
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.lock.release()
+        self.picked_up = False #Resetleme
+
+    def __str__(self):
+        return f"F{self.index:2d} ({'P' if self.picked_up else ' '})"
 
 class Philosopher(threading.Thread):
     def __init__(self, index, left_fork, right_fork, spaghetti):
@@ -24,17 +41,22 @@ class Philosopher(threading.Thread):
         time.sleep(3 + random.random() * 3)
 
     def eat(self):
-        with self.left_fork, self.right_fork:
-            time.sleep(5 + random.random() * 5)
-            self.spaghetti -= 1
-            self.eating = True
-            time.sleep(5 + random.random() * 5)
-            self.eating = False
+        left_fork_acquired = self.left_fork(self.index)
+        if left_fork_acquired:
+            right_fork_acquired = self.right_fork(self.index)
+            if right_fork_acquired:
+                self.spaghetti -= 1
+                self.eating = True
+                time.sleep(5 + random.random() * 5)
+                self.eating = False
+                self.right_fork.__exit__(None, None, None)
+            left_fork_acquired.__exit__(None, None, None)
 
     def run(self):
         while self.spaghetti > 0:
             self.think()
             self.eat()
+
 def animated_table(philosophers: list[Philosopher], forks: list[Fork], m: int):
     """
     Creates an animated table with the philosophers and forks.
@@ -90,57 +112,63 @@ def animated_table(philosophers: list[Philosopher], forks: list[Fork], m: int):
         """
         # get the philosophers and forks from the global scope
         nonlocal philosophers, forks
-        for i in range(len(philosophers)):
-            philosopher_circles[i].center = (
-                0.5 * math.cos(2 * math.pi * i / len(philosophers)),
-                0.5 * math.sin(2 * math.pi * i / len(philosophers)),
-            )
-            # update the labels as text on the plot
-            philosopher_texts[i].set_position(
-                (
-                    0.9 * math.cos(2 * math.pi * i / len(philosophers)),
-                    0.9 * math.sin(2 * math.pi * i / len(philosophers)),
-                )
-            )
-            philosopher_texts[i].set_text(
-                str(philosophers[i]) if philosophers[i].spaghetti > 0 else "X"
-            )
-            if philosophers[i].eating:
-                philosopher_circles[i].set_color("red")
-            else:
-                philosopher_circles[i].set_color("black")
-            philosopher_circles[i].radius = 0.2 * philosophers[i].spaghetti / m
-            fork_lines[i].set_data(
-                (
+        try:
+            for i in range(len(philosophers)):
+                philosopher_circles[i].center = (
                     0.5 * math.cos(2 * math.pi * i / len(philosophers)),
-                    0.5 * math.cos(2 * math.pi * (i + 1) / len(philosophers)),
-                ),
-                (
                     0.5 * math.sin(2 * math.pi * i / len(philosophers)),
-                    0.5 * math.sin(2 * math.pi * (i + 1) / len(philosophers)),
-                ),
-            )
-            # add the labels of the forks as text on the plot
-            fork_texts[i].set_position(
-                (
-                    0.5 * math.cos(2 * math.pi * i / len(philosophers))
-                    + 0.5 * math.cos(2 * math.pi * (i + 1) / len(philosophers)),
-                    0.5 * math.sin(2 * math.pi * i / len(philosophers))
-                    + 0.5 * math.sin(2 * math.pi * (i + 1) / len(philosophers)),
                 )
-            )
-            fork_texts[i].set_text(str(forks[i]))
-            if forks[i].picked_up:
-                fork_lines[i].set_color("red")
-            else:
-                fork_lines[i].set_color("black")
+                # update the labels as text on the plot
+                philosopher_texts[i].set_position(
+                    (
+                        0.9 * math.cos(2 * math.pi * i / len(philosophers)),
+                        0.9 * math.sin(2 * math.pi * i / len(philosophers)),
+                    )
+                )
+                philosopher_texts[i].set_text(
+                    str(philosophers[i]) if philosophers[i].spaghetti > 0 else "X"
+                )
+                if philosophers[i].eating:
+                    philosopher_circles[i].set_color("red")
+                else:
+                    philosopher_circles[i].set_color("black")
+                philosopher_circles[i].radius = 0.2 * philosophers[i].spaghetti / m
+                fork_lines[i].set_data(
+                    (
+                        0.5 * math.cos(2 * math.pi * i / len(philosophers)),
+                        0.5 * math.cos(2 * math.pi * (i + 1) / len(philosophers)),
+                    ),
+                    (
+                        0.5 * math.sin(2 * math.pi * i / len(philosophers)),
+                        0.5 * math.sin(2 * math.pi * (i + 1) / len(philosophers)),
+                    ),
+                )
+                # add the labels of the forks as text on the plot
+                fork_texts[i].set_position(
+                    (
+                        0.5 * math.cos(2 * math.pi * i / len(philosophers))
+                        + 0.5 * math.cos(2 * math.pi * (i + 1) / len(philosophers)),
+                        0.5 * math.sin(2 * math.pi * i / len(philosophers))
+                        + 0.5 * math.sin(2 * math.pi * (i + 1) / len(philosophers)),
+                    )
+                )
+                fork_texts[i].set_text(str(forks[i]))
+                if forks[i].picked_up:
+                    fork_lines[i].set_color("red")
+                else:
+                    fork_lines[i].set_color("black")
+        except Exception as e:
+            print(f"An error occurred in the update function: {e}")
         return philosopher_circles + fork_lines + philosopher_texts + fork_texts
 
     ani = animation.FuncAnimation(
         fig, update, frames=range(100000), interval=10, blit=False
     )
-    plt.show()
 
+    try:
+        plt.show()
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 def table(philosophers: list[Philosopher], forks: list[Fork], m: int):
     """
@@ -173,36 +201,17 @@ def table(philosophers: list[Philosopher], forks: list[Fork], m: int):
         )
         time.sleep(0.1)
 
-class DiningPhilosophers:
-    def __init__(self, number_of_philosophers=5, meal_size=7):
-        self.meals = [meal_size for _ in range(number_of_philosophers)]
-        self.chopsticks = [Fork(i) for i in range(number_of_philosophers)]
-
-    def philosopher(self, i):
-        j = (i + 1) % len(self.chopsticks)
-        while self.meals[i] > 0:
-            time.sleep(random.random())
-            if self.chopsticks[i].acquire(blocking=False):  # acquire metodunu kullanarak kilidi denemek
-                time.sleep(random.random())
-                if self.chopsticks[j].acquire(blocking=False):
-                    time.sleep(random.random())
-                    self.meals[i] -= 1
-                    self.chopsticks[j].release()
-                    self.chopsticks[i].release()
-                else:
-                    self.chopsticks[i].release()
-
-def main():
-    n = 5
-    m = 7
-    dining_phi = DiningPhilosophers(n, m)
-    philosophers = [Philosopher(i, dining_phi.chopsticks[i], dining_phi.chopsticks[(i + 1) % n], m) for i in range(n)]
-
+def main() -> None:
+    n: int = 5
+    m: int = 7
+    forks: list[Fork] = [Fork(i) for i in range(n)]
+    philosophers: list[Philosopher] = [
+        Philosopher(i, forks[i], forks[(i + 1) % n], m) for i in range(n)
+    ]
     for philosopher in philosophers:
         philosopher.start()
-    threading.Thread(target=table, args=(philosophers, dining_phi.chopsticks, m), daemon=True).start()
-    animated_table(philosophers, dining_phi.chopsticks, m)    
-
+    threading.Thread(target=table, args=(philosophers, forks, m), daemon=True).start()
+    animated_table(philosophers, forks, m)
     for philosopher in philosophers:
         philosopher.join()
 
